@@ -2,6 +2,15 @@ language: php
 
 sudo: false
 
+php:
+  - 5.3
+  - 5.4
+  - 5.5
+  - 5.6
+  - 7.0
+  - hhvm
+  - nightly
+
 cache:
   directories:
     - $HOME/.composer/cache
@@ -13,16 +22,32 @@ matrix:
         - php: 5.5
           env: SYMFONY_DEPRECATIONS_HELPER=weak
         - php: 5.6
+          env: SYMFONY_VERSION=2.6.*
+        - php: 5.6
           env: SYMFONY_VERSION=2.7.* COVERAGE=true
         - php: 5.6
           env: SYMFONY_VERSION=2.8.*
         - php: 5.6
           env: SYMFONY_VERSION=3.0.*
+        - php: 5.6
+          env: SYMFONY_VERSION=3.1.*
+        - php: 7
+          env: SYMFONY_VERSION=2.6.*
+        - php: 7
+          env: SYMFONY_VERSION=2.7.*
+        - php: 7
+          env: SYMFONY_VERSION=2.8.*
+        - php: 7
+          env: SYMFONY_VERSION=3.0.*
+        - php: 7
+          env: SYMFONY_VERSION=3.1.*
         - php: 7.0
           env: SYMFONY_DEPRECATIONS_HELPER=weak
         - php: hhvm
           env: SYMFONY_DEPRECATIONS_HELPER=weak
     fast_finish: true
+    allow_failures:
+        - php: nightly
 
 before_install:
   - if [ "$COVERAGE" != "true" ] && [ "$TRAVIS_PHP_VERSION" != "hhvm" ]; then phpenv config-rm xdebug.ini; fi
