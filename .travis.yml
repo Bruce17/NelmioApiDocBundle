@@ -59,4 +59,5 @@ before_install:
 
 install: composer update $COMPOSER_FLAGS --prefer-stable
 
-script: ./phpunit
+script:
+  - php ./phpunit
