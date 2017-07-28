@@ -1,25 +1,31 @@
 <?php
 
+/*
+ * This file is part of the NelmioApiDocBundle package.
+ *
+ * (c) Nelmio
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
 namespace Nelmio\ApiDocBundle;
 
-use Nelmio\ApiDocBundle\DependencyInjection\AnnotationsProviderCompilerPass;
-use Nelmio\ApiDocBundle\DependencyInjection\SwaggerConfigCompilerPass;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Nelmio\ApiDocBundle\DependencyInjection\Compiler\AddDescribersPass;
+use Nelmio\ApiDocBundle\DependencyInjection\Compiler\AddModelDescribersPass;
+use Nelmio\ApiDocBundle\DependencyInjection\Compiler\AddRouteDescribersPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Nelmio\ApiDocBundle\DependencyInjection\LoadExtractorParsersPass;
-use Nelmio\ApiDocBundle\DependencyInjection\RegisterExtractorParsersPass;
-use Nelmio\ApiDocBundle\DependencyInjection\ExtractorHandlerCompilerPass;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
 
-class NelmioApiDocBundle extends Bundle
+final class NelmioApiDocBundle extends Bundle
 {
+    /**
+     * {@inheritdoc}
+     */
     public function build(ContainerBuilder $container)
     {
-        parent::build($container);
-
-        $container->addCompilerPass(new LoadExtractorParsersPass());
-        $container->addCompilerPass(new RegisterExtractorParsersPass());
-        $container->addCompilerPass(new ExtractorHandlerCompilerPass());
-        $container->addCompilerPass(new AnnotationsProviderCompilerPass());
-        $container->addCompilerPass(new SwaggerConfigCompilerPass());
+        $container->addCompilerPass(new AddDescribersPass());
+        $container->addCompilerPass(new AddModelDescribersPass());
+        $container->addCompilerPass(new AddRouteDescribersPass());
     }
 }

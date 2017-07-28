@@ -1,9 +1,9 @@
 <?php
 
 /*
- * This file is part of the NelmioApiDocBundle.
+ * This file is part of the NelmioApiDocBundle package.
  *
- * (c) Nelmio <hello@nelm.io>
+ * (c) Nelmio
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -11,85 +11,96 @@
 
 namespace Nelmio\ApiDocBundle\DependencyInjection;
 
+use FOS\RestBundle\Controller\Annotations\ParamInterface;
+use Nelmio\ApiDocBundle\ModelDescriber\FormModelDescriber;
+use Nelmio\ApiDocBundle\ModelDescriber\JMSModelDescriber;
+use Nelmio\ApiDocBundle\Routing\FilteredRouteCollectionBuilder;
+use phpDocumentor\Reflection\DocBlockFactory;
 use Symfony\Component\Config\FileLocator;
-use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\HttpKernel\DependencyInjection\Extension;
-use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\Config\Definition\Processor;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Extension\PrependExtensionInterface;
+use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
+use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Form\FormInterface;
+use Symfony\Component\HttpKernel\DependencyInjection\Extension;
+use Symfony\Component\Routing\RouteCollection;
 
-class NelmioApiDocExtension extends Extension
+final class NelmioApiDocExtension extends Extension implements PrependExtensionInterface
 {
+    /**
+     * {@inheritdoc}
+     */
+    public function prepend(ContainerBuilder $container)
+    {
+        $container->prependExtensionConfig('framework', ['property_info' => ['enabled' => true]]);
+
+        // JMS Serializer support
+        $bundles = $container->getParameter('kernel.bundles');
+        if (isset($bundles['JMSSerializerBundle'])) {
+            $container->prependExtensionConfig('nelmio_api_doc', ['models' => ['use_jms' => true]]);
+        }
+    }
+
     /**
      * {@inheritdoc}
      */
     public function load(array $configs, ContainerBuilder $container)
     {
-        $processor = new Processor();
-        $configuration = new Configuration();
-        $config = $processor->processConfiguration($configuration, $configs);
-
-        $container->setParameter('nelmio_api_doc.motd.template', $config['motd']['template']);
-        $container->setParameter('nelmio_api_doc.exclude_sections', $config['exclude_sections']);
-        $container->setParameter('nelmio_api_doc.default_sections_opened', $config['default_sections_opened']);
-        $container->setParameter('nelmio_api_doc.api_name', $config['name']);
-        $container->setParameter('nelmio_api_doc.sandbox.enabled',  $config['sandbox']['enabled']);
-        $container->setParameter('nelmio_api_doc.sandbox.endpoint', $config['sandbox']['endpoint']);
-        $container->setParameter('nelmio_api_doc.sandbox.accept_type', $config['sandbox']['accept_type']);
-        $container->setParameter('nelmio_api_doc.sandbox.body_format.formats', $config['sandbox']['body_format']['formats']);
-        $container->setParameter('nelmio_api_doc.sandbox.body_format.default_format', $config['sandbox']['body_format']['default_format']);
-        $container->setParameter('nelmio_api_doc.sandbox.request_format.method', $config['sandbox']['request_format']['method']);
-        $container->setParameter('nelmio_api_doc.sandbox.request_format.default_format', $config['sandbox']['request_format']['default_format']);
-        $container->setParameter('nelmio_api_doc.sandbox.request_format.formats', $config['sandbox']['request_format']['formats']);
-        $container->setParameter('nelmio_api_doc.sandbox.entity_to_choice', $config['sandbox']['entity_to_choice']);
-
+        $config = $this->processConfiguration(new Configuration(), $configs);
         $loader = new XmlFileLoader($container, new FileLocator(__DIR__.'/../Resources/config'));
-        $loader->load('formatters.xml');
+
         $loader->load('services.xml');
 
-        if ($config['request_listener']['enabled']) {
-            $container->setParameter('nelmio_api_doc.request_listener.parameter', $config['request_listener']['parameter']);
-            $loader->load('request_listener.xml');
+        if (interface_exists(FormInterface::class)) {
+            $container->register('nelmio_api_doc.model_describers.form', FormModelDescriber::class)
+                ->setPublic(false)
+                ->addArgument(new Reference('form.factory'))
+                ->addTag('nelmio_api_doc.model_describer', ['priority' => 100]);
         }
 
-        if (isset($config['sandbox']['authentication'])) {
-            $container->setParameter('nelmio_api_doc.sandbox.authentication', $config['sandbox']['authentication']);
+        // Filter routes
+        $routesDefinition = (new Definition(RouteCollection::class))
+            ->setFactory([new Reference('router'), 'getRouteCollection']);
+
+        if (0 === count($config['routes']['path_patterns'])) {
+            $container->setDefinition('nelmio_api_doc.routes', $routesDefinition)
+                ->setPublic(false);
+        } else {
+            $container->register('nelmio_api_doc.routes', RouteCollection::class)
+                ->setPublic(false)
+                ->setFactory([
+                    (new Definition(FilteredRouteCollectionBuilder::class))
+                        ->addArgument($config['routes']['path_patterns']),
+                    'filter',
+                ])
+                ->addArgument($routesDefinition);
         }
 
-        // backwards compatibility for Symfony2.1 https://github.com/nelmio/NelmioApiDocBundle/issues/231
-        if (!interface_exists('\Symfony\Component\Validator\MetadataFactoryInterface')) {
-            $container->setParameter('nelmio_api_doc.parser.validation_parser.class', 'Nelmio\ApiDocBundle\Parser\ValidationParserLegacy');
+        // Import services needed for each library
+        $loader->load('swagger_php.xml');
+        if (class_exists(DocBlockFactory::class)) {
+            $loader->load('php_doc.xml');
+        }
+        if (interface_exists(ParamInterface::class)) {
+            $loader->load('fos_rest.xml');
         }
 
-        $container->setParameter('nelmio_api_doc.swagger.base_path', $config['swagger']['api_base_path']);
-        $container->setParameter('nelmio_api_doc.swagger.swagger_version', $config['swagger']['swagger_version']);
-        $container->setParameter('nelmio_api_doc.swagger.api_version', $config['swagger']['api_version']);
-        $container->setParameter('nelmio_api_doc.swagger.info', $config['swagger']['info']);
-        $container->setParameter('nelmio_api_doc.swagger.model_naming_strategy', $config['swagger']['model_naming_strategy']);
-
-        if ($config['cache']['enabled'] === true) {
-            $arguments = $container->getDefinition('nelmio_api_doc.extractor.api_doc_extractor')->getArguments();
-            $caching = new Definition('Nelmio\ApiDocBundle\Extractor\CachingApiDocExtractor');
-            $arguments[] = $config['cache']['file'];
-            $arguments[] = '%kernel.debug%';
-            $caching->setArguments($arguments);
-            $container->setDefinition('nelmio_api_doc.extractor.api_doc_extractor', $caching);
+        // ApiPlatform support
+        $bundles = $container->getParameter('kernel.bundles');
+        if (isset($bundles['ApiPlatformBundle']) && class_exists('ApiPlatform\Core\Documentation\Documentation')) {
+            $loader->load('api_platform.xml');
         }
-    }
 
-    /**
-     * @return string
-     */
-    public function getNamespace()
-    {
-        return 'http://nelmio.github.io/schema/dic/nelmio_api_doc';
-    }
+        // JMS metadata support
+        if ($config['models']['use_jms']) {
+            $container->register('nelmio_api_doc.model_describers.jms', JMSModelDescriber::class)
+                ->setPublic(false)
+                ->setArguments([new Reference('jms_serializer.metadata_factory'), new Reference('jms_serializer.naming_strategy')])
+                ->addTag('nelmio_api_doc.model_describer', ['priority' => 50]);
+        }
 
-    /**
-     * @return string
-     */
-    public function getXsdValidationBasePath()
-    {
-        return __DIR__ . '/../Resources/config/schema';
+        // Import the base configuration
+        $container->getDefinition('nelmio_api_doc.describers.config')->replaceArgument(0, $config['documentation']);
     }
 }
